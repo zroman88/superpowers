@@ -173,3 +173,92 @@ A question about a UI topic is not automatically a visual question. "What does p
 
 If they agree to the companion, read the detailed guide before proceeding:
 `skills/brainstorming/visual-companion.md`
+
+## Jira Integration
+
+An optional pre-step for brainstorming: if the user's initial request names a Jira ticket, fetch the ticket and use it as grounding context before starting the normal brainstorm. Depends on the Atlassian Remote MCP server being connected and authorized in the user's IDE (exposed as server `plugin-atlassian-atlassian`). If it isn't, skip the section entirely and brainstorm from the user's description.
+
+### Recognition & confirmation
+
+- Scan the user's opening brainstorm request with the regex `\b[A-Z][A-Z0-9]+-\d+\b` to find Jira-shaped keys.
+- If there are no matches, skip this section entirely. Do not mention Jira.
+- If there is one match, ask: *"I see you mentioned `<KEY>`. Want me to fetch it from Jira and include it as context for the brainstorm?"* Only on explicit yes does the next step run.
+- If there are multiple matches, list them and ask which to fetch (or all). Cap multi-ticket fetches at 3 per confirmation; if the user wants more, ask them to narrow down or pick in rounds.
+- If the user declines, skip silently and continue with standard brainstorming.
+
+### Two-step MCP fetch
+
+1. **Resolve `cloudId` (first Jira fetch in the session only).** Call `getAccessibleAtlassianResources` on server `plugin-atlassian-atlassian`. If one site is returned, use its `id`. If multiple, ask the user which site the ticket lives in. Cache the resolved `cloudId` in conversation context for the rest of the session. Do NOT persist `cloudId` to disk.
+2. **Call `getJiraIssue`** on server `plugin-atlassian-atlassian` with:
+
+```json
+{
+  "cloudId": "<resolved>",
+  "issueIdOrKey": "<the-jira-key>",
+  "fields": ["summary", "description", "status", "issuetype", "comment"]
+}
+```
+
+### Field extraction
+
+From the response:
+- Title: `fields.summary` (plain string).
+- Description: `fields.description` — already pre-rendered to Markdown by the MCP. Use as-is.
+- Status name: `fields.status.name`.
+- Issue type name: `fields.issuetype.name`.
+- Comments: `fields.comment.comments[]`. Sort by `created` descending, take the top 10, then reverse to oldest-first for chronological presentation. Each comment has `author.displayName`, `created` (ISO 8601 — display as `YYYY-MM-DD`), and `body` (ADF JSON; flatten per rules below).
+
+### ADF-to-text flattening (for comment bodies)
+
+Walk the ADF document tree depth-first and emit plain text/Markdown using these rules:
+
+- `text` node → emit its `text` value. If it has a `link` mark, append ` (<href>)` after the text.
+- `hardBreak` → `\n`.
+- Paragraph boundary → `\n\n` separator between paragraphs.
+- `bulletList` item → prefix with `- `, one item per line.
+- `orderedList` item → prefix with `1. `, `2. `, … in order.
+- `codeBlock` → wrap the inner text in triple-backtick fences.
+- `mention` node → `@<displayName>`.
+- `emoji` node → the emoji's `shortName` or `text` attribute, whichever is present.
+- Any node type not listed → recurse into its `content` and emit inner text only. Tables, panels, and media are included as their contained text with no special formatting.
+- If `body` is already a plain string (some servers/responses return that), use it directly without walking.
+
+### Context block format
+
+Present this block in the conversation exactly, filling in the fetched fields. It is the "context" the brainstorming flow will then use as grounding in step 1 (Explore project context):
+
+```
+## Jira context: <KEY> (<issuetype name> · <status name>)
+Title: <summary>
+
+Description:
+<description — already Markdown>
+
+Recent comments (showing <N> of <total>, oldest first):
+- [<YYYY-MM-DD> · <author displayName>]: <flattened comment body>
+- [<YYYY-MM-DD> · <author displayName>]: <flattened comment body>
+...
+
+Note to brainstorming session: Comments on a Jira ticket often include stale ideas, discarded approaches, questions that were never answered, and decisions that were later reversed. Before acting on anything a comment says (especially "we decided to X" or "the approach is Y"), ask the user to confirm the comment is still current and correct. Treat comments as evidence of past discussion, not as requirements.
+```
+
+If there are no comments, omit the "Recent comments" subsection entirely (do not print "Recent comments: none"). Still include the "Note to brainstorming session" only if at least one comment was presented.
+
+If the description is missing, print `Description: (empty)` on that line.
+
+### Error handling
+
+Every failure path acknowledges in a single sentence and then continues with standard brainstorming. Never silently retry. Never fabricate ticket content. Use these exact phrasings so behavior is predictable:
+
+- **Atlassian MCP unavailable:** "The Atlassian MCP server isn't responding, so I can't pull the ticket. I'll brainstorm from your description."
+- **Auth expired / scope missing:** "Couldn't reach Jira — looks like the Atlassian MCP session needs to be re-authorized. I'll brainstorm from your description; you can re-auth and re-paste the key if you want."
+- **Ticket not found / permission denied:** "`<KEY>` either doesn't exist or I don't have permission to read it. I'll brainstorm from your description."
+- **Ticket found but description empty AND no comments:** "`<KEY>` has no description or comments yet. I'll brainstorm from your description."
+- **Multiple sites available and the user declines to pick:** "No problem — I'll brainstorm from your description without the Jira context."
+- **Ticket found with no description but has comments:** proceed normally using just comments. Do not emit any error line.
+
+### Read-only boundary
+
+This skill is read-only by design. Even though the authorized MCP session has `write:jira-work` scope, NEVER call `addCommentToJiraIssue`, `editJiraIssue`, `transitionJiraIssue`, `createJiraIssue`, `addWorklogToJiraIssue`, or `createIssueLink` from this skill. Writing to a ticket is explicitly out of scope; see the design doc's Future Work section.
+
+Future work: write-back capabilities are out of scope — see the design doc's Future Work section.
