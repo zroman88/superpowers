@@ -21,7 +21,7 @@ Every project goes through this process. A todo list, a single-function utility,
 
 You MUST create a task for each of these items and complete them in order:
 
-0. **Jira key pre-check (optional)** — If the user's initial brainstorm request contains one or more Jira-shaped keys (regex `\b[A-Z][A-Z0-9]+-\d+\b`), ask whether to fetch. On yes, resolve `cloudId` and call `getJiraIssue` using **one of the two call shapes** in the "Jira Integration" section below — no custom `fields` lists. If the user declines, skip silently. If anything fails, acknowledge and continue.
+0. **Jira key pre-check (optional)** — If the user's initial brainstorm request contains one or more Jira-shaped keys (regex `\b[A-Z][A-Z0-9]+-\d+\b`), ask whether to fetch. On yes, resolve `cloudId` and call `getJiraIssue` using **the canonical call** in the "Jira Integration" section below — no other `fields` lists, no omitted-`fields` variant. If the user declines, skip silently. If anything fails, acknowledge and continue.
 1. **Explore project context** — check files, docs, recent commits
 2. **Offer visual companion** (if topic will involve visual questions) — this is its own message, not combined with a clarifying question. See the Visual Companion section below.
 3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
@@ -38,7 +38,10 @@ You MUST create a task for each of these items and complete them in order:
 digraph brainstorming {
     "Jira keys in request?" [shape=diamond];
     "User confirms fetch?" [shape=diamond];
-    "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue)" [shape=box];
+    "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue\ncanonical shape w/ 'comment')" [shape=box];
+    "Emit 'Comments present: Y/N (count=N)'\nself-check line" [shape=box];
+    "N > 30?" [shape=diamond];
+    "Ask user: load all N or stick with 30?\n(own message; silence = 30)" [shape=box];
     "Present as context block" [shape=box];
     "Explore project context" [shape=box];
     "Visual questions ahead?" [shape=diamond];
@@ -54,10 +57,14 @@ digraph brainstorming {
 
     "Jira keys in request?" -> "User confirms fetch?" [label="yes"];
     "Jira keys in request?" -> "Explore project context" [label="no"];
-    "User confirms fetch?" -> "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue)" [label="yes"];
+    "User confirms fetch?" -> "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue\ncanonical shape w/ 'comment')" [label="yes"];
     "User confirms fetch?" -> "Explore project context" [label="no"];
-    "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue)" -> "Present as context block" [label="ok"];
-    "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue)" -> "Explore project context" [label="fails (1-line ack)"];
+    "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue\ncanonical shape w/ 'comment')" -> "Emit 'Comments present: Y/N (count=N)'\nself-check line" [label="ok"];
+    "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue\ncanonical shape w/ 'comment')" -> "Explore project context" [label="fails (1-line ack)"];
+    "Emit 'Comments present: Y/N (count=N)'\nself-check line" -> "N > 30?";
+    "N > 30?" -> "Ask user: load all N or stick with 30?\n(own message; silence = 30)" [label="yes"];
+    "N > 30?" -> "Present as context block" [label="no"];
+    "Ask user: load all N or stick with 30?\n(own message; silence = 30)" -> "Present as context block";
     "Present as context block" -> "Explore project context";
     "Explore project context" -> "Visual questions ahead?";
     "Visual questions ahead?" -> "Offer Visual Companion\n(own message, no other content)" [label="yes"];
@@ -183,10 +190,10 @@ An optional pre-step for brainstorming: if the user's initial request names a Ji
 
 ### `getJiraIssue` and the `fields` parameter (read this — other skills are easy to misfire with)
 
-- Other skills may describe `getJiraIssue(cloudId, issueIdOrKey)` **with no `fields` argument** as returning full issue content **including** description, **comments**, and status. That matches **omitting** `fields`: the service uses a default expansion.
-- **When you pass a `fields` array, that behavior does not apply.** The API returns **only** the field ids you request. A **custom** `fields` list that **omits** `comment` is not a bug — Jira correctly returns **no** comment data. The brainstorming failure mode is: you copied a "minimal" field list, left out `comment`, and assumed "full issue" still applied. **It does not.**
-- **Separately, `responseContentFormat` also matters.** The MCP defaults to ADF JSON for rich-text fields when `responseContentFormat` is omitted. The canonical call shapes below pass `"responseContentFormat": "markdown"` so the top-level `fields.description` comes back pre-rendered; without it you will get raw ADF and have to flatten descriptions the same way you flatten comment bodies.
-- **This skill wins over generic Atlassian/company-knowledge phrasing in ticket-driven brainstorms:** do not merge "full issue details" from other docs with a hand-built `fields` list. You may use **only** one of the two call shapes in "Two-step MCP fetch" below (shape A: no `fields`; shape B: the exact `["summary", "description", "status", "issuetype", "comment"]` list). Any other `fields` array — or any call that forgets `responseContentFormat: "markdown"` — is out of spec for this step.
+- Other skills may describe `getJiraIssue(cloudId, issueIdOrKey)` **with no `fields` argument** as returning "full issue" content — including description, **comments**, and status. **That is wrong for this MCP.** Under the hood the call maps to Jira Cloud's `GET /rest/api/3/issue/{key}`, whose default is `*navigable` fields — and `comment` is **not** in the navigable set. Empirically, omitting `fields` has returned payloads with **no comment thread** on tickets that have dozens of comments. Do not trust an "omit `fields` for full issue" instruction from any other skill.
+- **If you pass a `fields` array, the API returns ONLY those ids.** A custom `fields` list that omits `comment` is not a bug — Jira correctly returns no comment data. The brainstorming failure mode is: you copied a "minimal" field list, left out `comment`, and assumed "full issue" still applied. **It does not.**
+- **`responseContentFormat` matters too.** The MCP defaults to ADF JSON for rich-text fields when `responseContentFormat` is omitted. The canonical call below passes `"responseContentFormat": "markdown"` so the top-level `fields.description` comes back pre-rendered; without it you will get raw ADF and have to flatten descriptions the same way you flatten comment bodies.
+- **This skill wins over generic Atlassian/company-knowledge phrasing in ticket-driven brainstorms.** There is exactly **ONE** call shape for this step — the canonical call in "Two-step MCP fetch" below, with `fields: ["summary", "description", "status", "issuetype", "comment"]` and `responseContentFormat: "markdown"`. Any other `fields` array, any call that omits `fields` entirely, and any call that forgets `responseContentFormat: "markdown"` are all **out of spec**.
 
 ### Recognition & confirmation
 
@@ -199,21 +206,9 @@ An optional pre-step for brainstorming: if the user's initial request names a Ji
 ### Two-step MCP fetch
 
 1. **Resolve `cloudId` (first Jira fetch in the session only).** Call `getAccessibleAtlassianResources` on server `plugin-atlassian-atlassian`. If one site is returned, use its `id`. If multiple, ask the user which site the ticket lives in. Cache the resolved `cloudId` in conversation context for the rest of the session. Do NOT persist `cloudId` to disk.
-2. **Call `getJiraIssue`** on server `plugin-atlassian-atlassian` in **one** of these two ways — no third option. Both shapes MUST include `"responseContentFormat": "markdown"`; the MCP defaults to ADF otherwise, which breaks the "description is already Markdown" assumption used by the Field extraction step below.
-   - **(A) Omit `fields` entirely** — `cloudId`, `issueIdOrKey`, and `responseContentFormat: "markdown"` only. Matches "full issue" behavior described in other skills; comments should be present in the default payload when the issue has them.
-   - **(B) Pass `fields` with this exact list** (all five, including `comment`) plus `responseContentFormat: "markdown"` — use when you always want an explicit, reproducible set. **If you use (B) and you drop `comment` from the list, you will not get comments.** Do not do that.
+2. **Call `getJiraIssue`** on server `plugin-atlassian-atlassian` using **the canonical call shape below** — this is the ONLY permitted shape for this step. The `fields` list MUST contain all five ids (including `comment`) and `responseContentFormat` MUST be `"markdown"` (the MCP defaults to ADF otherwise, which breaks the "description is already Markdown" assumption used by the Field extraction step below). There is no "omit `fields` for full issue" alternative — see the preceding subsection for why.
 
-**Shape for (A) — minimal, full-default payload:**
-
-```json
-{
-  "cloudId": "<resolved>",
-  "issueIdOrKey": "<the-jira-key>",
-  "responseContentFormat": "markdown"
-}
-```
-
-**Shape for (B) — copy `fields` verbatim; do not edit the list or substitute a "smaller" set:**
+**Canonical call — copy `fields` verbatim; do not edit the list, do not substitute a "smaller" or "more complete" set, do not drop `comment`:**
 
 ```json
 {
@@ -224,14 +219,39 @@ An optional pre-step for brainstorming: if the user's initial request names a Ji
 }
 ```
 
-**Out of spec:** Any other `fields` array (e.g. only `summary` + `description` + `status` + `issuetype` without `comment`, or a custom set from habit), or omitting `responseContentFormat: "markdown"`. If you have already called `getJiraIssue` incorrectly, acknowledge the mistake in one sentence to the user and re-call with **(A)** or **(B)** before building the Jira context block.
+**Out of spec (any of these is a misfire — self-correct as described below):**
+- Any other `fields` array, including the "minimal" set (`summary` + `description` + `status` + `issuetype` with `comment` dropped).
+- Omitting `fields` entirely. This used to be an explicitly-allowed "shape A" and is no longer — the MCP's default `fields` does not include `comment`, so comments come back missing.
+- Omitting `responseContentFormat: "markdown"`.
+
+If you have already called `getJiraIssue` incorrectly, acknowledge the mistake in one sentence to the user and re-call with the canonical shape above before building the Jira context block.
 
 **Comment completeness (mandatory before you build the Jira context block):**
 
-- After `getJiraIssue` returns, **inspect the payload for the comment collection** (e.g. `fields.comment` and how the MCP names it). You must not treat the pre-step as done if you only have summary and description and the issue has a comment thread in Jira.
-- If you used **(B)** and `comment` is in `fields` but the ticket has zero comments, or **(A)** and the default payload has no comments for an un-commented issue, proceed — that is valid.
-- If you used a **partial** `fields` list without `comment` (or forgot `responseContentFormat: "markdown"`), acknowledge the slip-up in one sentence to the user and re-call with **(A)** or **(B)** before presenting context. This is a self-correction, not a silent retry — the user sees the acknowledgement line.
-- **Jira Cloud REST (background):** `GET /rest/api/3/issue/{issueIdOrKey}/comment` lists comments; get-issue with `comment` in `fields` is the normal path. If, after a correct **(A)** or **(B)** call, comment data is still missing and you have no read-only way to load it, state that in one sentence and continue from title and description.
+This is a visible forcing function, not an internal check. The user must see evidence that you looked.
+
+1. **Inspect the payload for the comment collection** — locate `fields.comment` (the canonical call shape above guarantees it will be in the returned object if the call succeeded). Count the entries (`fields.comment.comments.length`, or equivalent if the MCP renames it). Call this count `N`.
+2. **Emit the self-check line to the user** in the conversation, as its own line, immediately before the Jira context block. Use this exact format:
+
+    ```
+    Comments present: <YES|NO> (count=<N>)
+    ```
+
+   - `YES` when the comment collection exists and `N >= 1`.
+   - `NO` when the comment collection exists and `N == 0` (an un-commented issue — valid; proceed).
+   - If the comment collection is **missing** from the payload at all, do **not** print `NO` and proceed — that means the call was out of spec. Instead, acknowledge the misfire in one sentence (see next bullet) and re-call.
+3. **Ask about load size when `N > 30`.** The Field extraction step below defaults to the 30 most recent comments. If `N > 30`, before building the context block, ask the user — as its own message, not combined with clarifying questions — whether to load all `N`. Use this exact phrasing (fill in the number):
+
+    > "This ticket has `<N>` comments. The default is to load the 30 most recent. Loading all `<N>` gives fuller context but uses more tokens. Want me to load all `<N>`?"
+
+   Wait for the user's answer. Then:
+   - **Explicit "yes" / "load all" / equivalent affirmative** → load all `N` comments in Field extraction below. Record this choice as `load_all = true` for the rest of this ticket's context build.
+   - **Explicit "no" / "just 30" / equivalent negative** → load 30. `load_all = false`.
+   - **Silence, ambiguous answer, or off-topic reply** → default to 30 (`load_all = false`). Do not re-prompt; the user can always ask later to see more.
+
+   When `N <= 30`, skip this step entirely — there is nothing to ask. Do not mention the 30 cap unless it matters.
+4. **Self-correction on misfire.** If you realize you called `getJiraIssue` with the wrong `fields` (missing `comment`, missing entirely, or without `responseContentFormat: "markdown"`), acknowledge the slip-up in one sentence to the user and re-call with the canonical shape before presenting context. The user sees the acknowledgement line — it is never a silent retry.
+5. **Last-resort fallback (Jira Cloud REST background):** `GET /rest/api/3/issue/{issueIdOrKey}/comment` lists comments directly; in this MCP, the canonical `getJiraIssue` call with `comment` in `fields` is the normal path. If, after a correct canonical call, comment data is still missing and you have no read-only way to load it, state that in one sentence and continue from title and description.
 
 ### Field extraction
 
@@ -240,7 +260,7 @@ From the response:
 - Description: `fields.description` — already pre-rendered to Markdown by the MCP. Use as-is.
 - Status name: `fields.status.name`.
 - Issue type name: `fields.issuetype.name`.
-- Comments: `fields.comment.comments[]`. Sort by `created` descending, take the top 10, then reverse to oldest-first for chronological presentation. Each comment has `author.displayName`, `created` (ISO 8601 — display as `YYYY-MM-DD`), and `body` (ADF JSON; flatten per rules below).
+- Comments: `fields.comment.comments[]`. Sort by `created` descending, then take the top `K` where **`K = total` if the user opted to load all (`load_all = true` from the Comment completeness step) and `K = min(30, total)` otherwise**. Reverse the selected slice to oldest-first for chronological presentation. Each comment has `author.displayName`, `created` (ISO 8601 — display as `YYYY-MM-DD`), and `body` (ADF JSON; flatten per rules below).
 
 ### ADF-to-text flattening (for comment bodies)
 
@@ -259,9 +279,13 @@ Walk the ADF document tree depth-first and emit plain text/Markdown using these 
 
 ### Context block format
 
-Present this block in the conversation exactly, filling in the fetched fields. It is the "context" the brainstorming flow will then use as grounding in step 1 (Explore project context):
+Present this block in the conversation exactly, filling in the fetched fields. It is the "context" the brainstorming flow will then use as grounding in step 1 (Explore project context).
+
+**Order of emission:** the `Comments present: …` self-check line from the Comment completeness section above MUST come immediately before the `## Jira context:` heading, on its own line, separated from the heading by a single blank line. The check line is part of the output the user sees, not an internal note.
 
 ```
+Comments present: <YES|NO> (count=<N>)
+
 ## Jira context: <KEY> (<issuetype name> · <status name>)
 Title: <summary>
 
