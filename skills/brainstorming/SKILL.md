@@ -21,7 +21,7 @@ Every project goes through this process. A todo list, a single-function utility,
 
 You MUST create a task for each of these items and complete them in order:
 
-0. **Jira key pre-check (optional)** — If the user's initial brainstorm request contains one or more Jira-shaped keys (regex `\b[A-Z][A-Z0-9]+-\d+\b`), ask whether to fetch. On yes, resolve `cloudId` and call `getJiraIssue`; prepend the result as a context block to the brainstorm. See "Jira Integration" section below. If the user declines, skipped silently. If anything fails, acknowledge and continue.
+0. **Jira key pre-check (optional)** — If the user's initial brainstorm request contains one or more Jira-shaped keys (regex `\b[A-Z][A-Z0-9]+-\d+\b`), ask whether to fetch. On yes, resolve `cloudId` and call `getJiraIssue` using **one of the two call shapes** in the "Jira Integration" section below — no custom `fields` lists. If the user declines, skip silently. If anything fails, acknowledge and continue.
 1. **Explore project context** — check files, docs, recent commits
 2. **Offer visual companion** (if topic will involve visual questions) — this is its own message, not combined with a clarifying question. See the Visual Companion section below.
 3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
@@ -56,7 +56,8 @@ digraph brainstorming {
     "Jira keys in request?" -> "Explore project context" [label="no"];
     "User confirms fetch?" -> "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue)" [label="yes"];
     "User confirms fetch?" -> "Explore project context" [label="no"];
-    "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue)" -> "Present as context block";
+    "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue)" -> "Present as context block" [label="ok"];
+    "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue)" -> "Explore project context" [label="fails (1-line ack)"];
     "Present as context block" -> "Explore project context";
     "Explore project context" -> "Visual questions ahead?";
     "Visual questions ahead?" -> "Offer Visual Companion\n(own message, no other content)" [label="yes"];
@@ -178,6 +179,15 @@ If they agree to the companion, read the detailed guide before proceeding:
 
 An optional pre-step for brainstorming: if the user's initial request names a Jira ticket, fetch the ticket and use it as grounding context before starting the normal brainstorm. Depends on the Atlassian Remote MCP server being connected and authorized in the user's IDE (exposed as server `plugin-atlassian-atlassian`). If it isn't, skip the section entirely and brainstorm from the user's description.
 
+**Practical rule (ticket-driven brainstorms):** Load issue summary, description, and comments (and linked docs if referenced) before asking clarifying questions or proposing approaches.
+
+### `getJiraIssue` and the `fields` parameter (read this — other skills are easy to misfire with)
+
+- Other skills may describe `getJiraIssue(cloudId, issueIdOrKey)` **with no `fields` argument** as returning full issue content **including** description, **comments**, and status. That matches **omitting** `fields`: the service uses a default expansion.
+- **When you pass a `fields` array, that behavior does not apply.** The API returns **only** the field ids you request. A **custom** `fields` list that **omits** `comment` is not a bug — Jira correctly returns **no** comment data. The brainstorming failure mode is: you copied a "minimal" field list, left out `comment`, and assumed "full issue" still applied. **It does not.**
+- **Separately, `responseContentFormat` also matters.** The MCP defaults to ADF JSON for rich-text fields when `responseContentFormat` is omitted. The canonical call shapes below pass `"responseContentFormat": "markdown"` so the top-level `fields.description` comes back pre-rendered; without it you will get raw ADF and have to flatten descriptions the same way you flatten comment bodies.
+- **This skill wins over generic Atlassian/company-knowledge phrasing in ticket-driven brainstorms:** do not merge "full issue details" from other docs with a hand-built `fields` list. You may use **only** one of the two call shapes in "Two-step MCP fetch" below (shape A: no `fields`; shape B: the exact `["summary", "description", "status", "issuetype", "comment"]` list). Any other `fields` array — or any call that forgets `responseContentFormat: "markdown"` — is out of spec for this step.
+
 ### Recognition & confirmation
 
 - Scan the user's opening brainstorm request with the regex `\b[A-Z][A-Z0-9]+-\d+\b` to find Jira-shaped keys.
@@ -189,15 +199,39 @@ An optional pre-step for brainstorming: if the user's initial request names a Ji
 ### Two-step MCP fetch
 
 1. **Resolve `cloudId` (first Jira fetch in the session only).** Call `getAccessibleAtlassianResources` on server `plugin-atlassian-atlassian`. If one site is returned, use its `id`. If multiple, ask the user which site the ticket lives in. Cache the resolved `cloudId` in conversation context for the rest of the session. Do NOT persist `cloudId` to disk.
-2. **Call `getJiraIssue`** on server `plugin-atlassian-atlassian` with:
+2. **Call `getJiraIssue`** on server `plugin-atlassian-atlassian` in **one** of these two ways — no third option. Both shapes MUST include `"responseContentFormat": "markdown"`; the MCP defaults to ADF otherwise, which breaks the "description is already Markdown" assumption used by the Field extraction step below.
+   - **(A) Omit `fields` entirely** — `cloudId`, `issueIdOrKey`, and `responseContentFormat: "markdown"` only. Matches "full issue" behavior described in other skills; comments should be present in the default payload when the issue has them.
+   - **(B) Pass `fields` with this exact list** (all five, including `comment`) plus `responseContentFormat: "markdown"` — use when you always want an explicit, reproducible set. **If you use (B) and you drop `comment` from the list, you will not get comments.** Do not do that.
+
+**Shape for (A) — minimal, full-default payload:**
 
 ```json
 {
   "cloudId": "<resolved>",
   "issueIdOrKey": "<the-jira-key>",
-  "fields": ["summary", "description", "status", "issuetype", "comment"]
+  "responseContentFormat": "markdown"
 }
 ```
+
+**Shape for (B) — copy `fields` verbatim; do not edit the list or substitute a "smaller" set:**
+
+```json
+{
+  "cloudId": "<resolved>",
+  "issueIdOrKey": "<the-jira-key>",
+  "fields": ["summary", "description", "status", "issuetype", "comment"],
+  "responseContentFormat": "markdown"
+}
+```
+
+**Out of spec:** Any other `fields` array (e.g. only `summary` + `description` + `status` + `issuetype` without `comment`, or a custom set from habit), or omitting `responseContentFormat: "markdown"`. If you have already called `getJiraIssue` incorrectly, acknowledge the mistake in one sentence to the user and re-call with **(A)** or **(B)** before building the Jira context block.
+
+**Comment completeness (mandatory before you build the Jira context block):**
+
+- After `getJiraIssue` returns, **inspect the payload for the comment collection** (e.g. `fields.comment` and how the MCP names it). You must not treat the pre-step as done if you only have summary and description and the issue has a comment thread in Jira.
+- If you used **(B)** and `comment` is in `fields` but the ticket has zero comments, or **(A)** and the default payload has no comments for an un-commented issue, proceed — that is valid.
+- If you used a **partial** `fields` list without `comment` (or forgot `responseContentFormat: "markdown"`), acknowledge the slip-up in one sentence to the user and re-call with **(A)** or **(B)** before presenting context. This is a self-correction, not a silent retry — the user sees the acknowledgement line.
+- **Jira Cloud REST (background):** `GET /rest/api/3/issue/{issueIdOrKey}/comment` lists comments; get-issue with `comment` in `fields` is the normal path. If, after a correct **(A)** or **(B)** call, comment data is still missing and you have no read-only way to load it, state that in one sentence and continue from title and description.
 
 ### Field extraction
 
@@ -234,15 +268,29 @@ Title: <summary>
 Description:
 <description — already Markdown>
 
+<recent-comments-subsection-if-any>
+
+<staleness-note-if-recent-comments-subsection-was-emitted>
+```
+
+**Each `<...>` placeholder includes its own leading/trailing blank lines.** When a placeholder is omitted (zero comments → omit both the subsection AND the staleness note), collapse any adjacent blank lines too, so the rendered block ends cleanly at `Description:` instead of trailing whitespace.
+
+**Recent comments subsection** — emit ONLY if at least one comment is being presented:
+
+```
 Recent comments (showing <N> of <total>, oldest first):
 - [<YYYY-MM-DD> · <author displayName>]: <flattened comment body>
 - [<YYYY-MM-DD> · <author displayName>]: <flattened comment body>
 ...
-
-Note to brainstorming session: Comments on a Jira ticket often include stale ideas, discarded approaches, questions that were never answered, and decisions that were later reversed. Before acting on anything a comment says (especially "we decided to X" or "the approach is Y"), ask the user to confirm the comment is still current and correct. Treat comments as evidence of past discussion, not as requirements.
 ```
 
-If there are no comments, omit the "Recent comments" subsection entirely (do not print "Recent comments: none"). Still include the "Note to brainstorming session" only if at least one comment was presented.
+If the issue has zero comments, omit this entire subsection (do not print "Recent comments: none").
+
+**Staleness note** — emit ONLY if the Recent comments subsection was emitted:
+
+```
+Note to brainstorming session: Comments on a Jira ticket often include stale ideas, discarded approaches, questions that were never answered, and decisions that were later reversed. Before acting on anything a comment says (especially "we decided to X" or "the approach is Y"), ask the user to confirm the comment is still current and correct. Treat comments as evidence of past discussion, not as requirements.
+```
 
 If the description is missing, print `Description: (empty)` on that line.
 
@@ -260,5 +308,3 @@ Every failure path acknowledges in a single sentence and then continues with sta
 ### Read-only boundary
 
 This skill is read-only by design. Even though the authorized MCP session has `write:jira-work` scope, NEVER call `addCommentToJiraIssue`, `editJiraIssue`, `transitionJiraIssue`, `createJiraIssue`, `addWorklogToJiraIssue`, or `createIssueLink` from this skill. Writing to a ticket is explicitly out of scope; see the design doc's Future Work section.
-
-Future work: write-back capabilities are out of scope — see the design doc's Future Work section.

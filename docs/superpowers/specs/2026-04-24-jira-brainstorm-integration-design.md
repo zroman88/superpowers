@@ -43,15 +43,18 @@ On server `plugin-atlassian-atlassian`:
 - `getAccessibleAtlassianResources` — resolves the `cloudId` on first Jira fetch per session.
 - `getJiraIssue` — fetches the ticket.
 
-Required argument shape for `getJiraIssue` (verified live via a failing call that returned the validator's required-param list):
+Canonical argument shape for `getJiraIssue`. `cloudId` and `issueIdOrKey` are the only strictly required parameters per the MCP schema; `fields` and `responseContentFormat` are optional but both are included here on purpose. Without `responseContentFormat: "markdown"` the MCP returns descriptions and comment bodies as raw ADF JSON (the server default is `"adf"`), breaking the "description is already Markdown" assumption used by downstream extraction. With it, descriptions come back pre-rendered as Markdown and the skill only has to flatten comment bodies.
 
 ```json
 {
   "cloudId": "<uuid>",
   "issueIdOrKey": "<jira-key>",
-  "fields": ["summary", "description", "status", "issuetype", "comment"]
+  "fields": ["summary", "description", "status", "issuetype", "comment"],
+  "responseContentFormat": "markdown"
 }
 ```
+
+A minimal shape that also works is `cloudId` + `issueIdOrKey` + `responseContentFormat: "markdown"` with `fields` omitted (MCP returns the default full expansion, including the comment thread). Either shape is acceptable; no other `fields` combinations are.
 
 ### Recognition & confirmation
 
@@ -68,8 +71,8 @@ If multiple matches, agent lists them and asks which to fetch (or all). The agen
 3. On yes: resolve `cloudId` if not already cached for this session (call `getAccessibleAtlassianResources`; if multiple sites, ask which).
 4. Call `getJiraIssue` with the fields list above.
 5. Extract: `fields.summary`, `fields.description`, `fields.status.name`, `fields.issuetype.name`, `fields.comment.comments[]` (sorted by `created` desc, take top 10, reverse to oldest-first).
-6. Description is used as-is — the MCP pre-renders ADF to Markdown server-side (verified live).
-7. Comments come back as ADF JSON and need light flattening (see "ADF-to-text flattening" below).
+6. Description comes back as pre-rendered Markdown because of `responseContentFormat: "markdown"` in the canonical call shape — use as-is. If for some reason the call was made without that flag, the description will be ADF JSON and must be flattened with the same rules as comments below.
+7. Comment bodies still need light ADF-to-text flattening (see "ADF-to-text flattening" below) — `responseContentFormat: "markdown"` pre-renders the top-level `fields.description`, but individual `comment` bodies inside `fields.comment.comments[]` still come back as ADF.
 8. Build the context block (format below) and present it in the conversation.
 9. Continue with brainstorming's existing step 1 ("Explore project context") unchanged.
 
@@ -169,13 +172,11 @@ The existing flow from "Explore project context" onward is untouched.
 A self-contained section, placed after "Visual Companion". Covers:
 
 1. Recognition regex and confirmation phrasing.
-2. Two-step MCP flow (`getAccessibleAtlassianResources` → `getJiraIssue`) with the exact argument shape.
-3. ADF-to-text flattening rules for comments.
-4. Context-block format.
-5. The "Note to brainstorming session" about comment staleness (reproduced verbatim in the skill).
-6. Error-handling catalog (reproduced verbatim from the table above).
-7. Read-only boundary (never call any `write:jira-work` tool from this skill).
-8. Closing line: "Future work: write-back capabilities are out of scope — see the design doc's Future Work section."
+2. Two-step MCP flow (`getAccessibleAtlassianResources` → `getJiraIssue`) with the exact argument shape (both the canonical five-field call and the minimal-omit-`fields` variant must pass `responseContentFormat: "markdown"`; without it the MCP returns ADF JSON).
+3. ADF-to-text flattening rules for comment bodies.
+4. Context-block format with conditional recent-comments subsection and conditional staleness note (emit the note only when comments are actually shown).
+5. Error-handling catalog (reproduced verbatim from the table above). Partial-`fields` self-correction acknowledges the slip-up in one sentence before re-calling — this is not a silent retry.
+6. Read-only boundary (never call any `write:jira-work` tool from this skill).
 
 ## Testing (manual, 4 scenarios)
 
