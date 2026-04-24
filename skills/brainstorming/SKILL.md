@@ -92,8 +92,9 @@ digraph brainstorming {
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
-- Prefer multiple choice questions when possible, but open-ended is fine too
-- Only one question per message - if a topic needs more exploration, break it into multiple questions
+- Prefer multiple-choice questions when possible, but open-ended is fine too
+- **When a question is multiple-choice (≥2 distinct options), use your platform's structured-question / multiple-choice tool — do NOT emit the options as plain numbered text.** On Cursor that tool is `AskQuestion`; other agent platforms expose an equivalent (Copilot's `ask_question`, Codex's interactive prompt, etc.). If your platform has no such tool, fall back to a plain numbered list. The structured tool is preferred because it gives the user a clickable UI instead of forcing them to type "2" or paste an option label, and it removes ambiguity about which option was picked.
+- Only one question per message — if a topic needs more exploration, break it into multiple questions (or, when using a structured-question tool that supports multiple questions per call, you may batch *closely-related* questions in a single call, but keep each question itself focused)
 - Focus on understanding: purpose, constraints, success criteria
 
 **Exploring approaches:**
@@ -158,6 +159,7 @@ Wait for the user's response. If they request changes, make them and re-run the 
 
 - **One question at a time** - Don't overwhelm with multiple questions
 - **Multiple choice preferred** - Easier to answer than open-ended when possible
+- **Structured-question UI for multiple-choice** - When the question has ≥2 distinct options, use your platform's structured-question tool (Cursor: `AskQuestion`; other platforms: equivalent) so the user gets a clickable UI. Plain numbered text is the fallback only when no such tool exists.
 - **YAGNI ruthlessly** - Remove unnecessary features from all designs
 - **Explore alternatives** - Always propose 2-3 approaches before settling
 - **Incremental validation** - Present design, get approval before moving on
