@@ -36,6 +36,10 @@ You MUST create a task for each of these items and complete them in order:
 
 ```dot
 digraph brainstorming {
+    "Jira keys in request?" [shape=diamond];
+    "User confirms fetch?" [shape=diamond];
+    "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue)" [shape=box];
+    "Present as context block" [shape=box];
     "Explore project context" [shape=box];
     "Visual questions ahead?" [shape=diamond];
     "Offer Visual Companion\n(own message, no other content)" [shape=box];
@@ -48,6 +52,12 @@ digraph brainstorming {
     "User reviews spec?" [shape=diamond];
     "Invoke writing-plans skill" [shape=doublecircle];
 
+    "Jira keys in request?" -> "User confirms fetch?" [label="yes"];
+    "Jira keys in request?" -> "Explore project context" [label="no"];
+    "User confirms fetch?" -> "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue)" [label="yes"];
+    "User confirms fetch?" -> "Explore project context" [label="no"];
+    "Fetch via Atlassian MCP\n(getAccessibleAtlassianResources, getJiraIssue)" -> "Present as context block";
+    "Present as context block" -> "Explore project context";
     "Explore project context" -> "Visual questions ahead?";
     "Visual questions ahead?" -> "Offer Visual Companion\n(own message, no other content)" [label="yes"];
     "Visual questions ahead?" -> "Ask clarifying questions" [label="no"];
