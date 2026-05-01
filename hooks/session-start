@@ -3,6 +3,19 @@
 
 set -euo pipefail
 
+# Cursor passes SessionStart input on stdin: {"session_id":"...", ...}. User hooks often
+# run WITHOUT CURSOR_PLUGIN_ROOT set, which previously routed output to additionalContext
+# (camelCase) — Cursor ignores that; it only applies additional_context (snake_case).
+hook_input=""
+if [ ! -t 0 ]; then
+  hook_input=$(cat) || true
+fi
+
+is_cursor_session_start() {
+  case "$1" in *'"session_id"'*) return 0 ;; esac
+  return 1
+}
+
 # Determine plugin root directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -32,25 +45,45 @@ escape_for_json() {
 
 using_superpowers_escaped=$(escape_for_json "$using_superpowers_content")
 warning_escaped=$(escape_for_json "$warning_message")
-session_context="<EXTREMELY_IMPORTANT>\nYou have superpowers.\n\n**Below is the full content of your 'superpowers:using-superpowers' skill - your introduction to using skills. For all other skills, use the 'Skill' tool:**\n\n${using_superpowers_escaped}\n\n${warning_escaped}\n</EXTREMELY_IMPORTANT>"
 
-# Output context injection as JSON.
-# Cursor hooks expect additional_context (snake_case).
-# Claude Code hooks expect hookSpecificOutput.additionalContext (nested).
-# Copilot CLI (v1.0.11+) and others expect additionalContext (top-level, SDK standard).
-# Claude Code reads BOTH additional_context and hookSpecificOutput without
-# deduplication, so we must emit only the field the current platform consumes.
-#
-# Uses printf instead of heredoc to work around bash 5.3+ heredoc hang.
-# See: https://github.com/obra/superpowers/issues/571
-if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then
-  # Cursor sets CURSOR_PLUGIN_ROOT (may also set CLAUDE_PLUGIN_ROOT)
+# Cursor Agent has no Skill tool; SKILL.md still says "Skill tool" / "never Read skill files".
+# Inject an adapter first so it overrides those lines when present.
+use_cursor_agent_adapter=false
+if [ -n "${CURSOR_PLUGIN_ROOT:-}" ] || is_cursor_session_start "$hook_input"; then
+  use_cursor_agent_adapter=true
+fi
+
+if [ "$use_cursor_agent_adapter" = true ]; then
+  cursor_adapter_plain=$'<CURSOR_AGENT_SKILLS_ADAPTER>\nThis session runs in Cursor Agent. The using-superpowers text below is shared with Claude Code. **Conflict resolution:** wherever it says to use a Skill tool or to avoid reading skill files with Read, **ignore that here**. In Cursor, loading a skill means reading its SKILL.md with the Read tool using the absolute path from your available-skills list.\n\nMandatory:\n- If any skill might apply (even a small chance), Read that skill file before substantive replies or non-trivial tool use; then follow it.\n- Before creative work, design, new features, behavior changes, or when the user combines design/planning with a ticket key (e.g. Jira): locate brainstorming in available-skills and make your **first tool call** Read(that SKILL.md path), then follow that skill—including asking before ticket fetch when keys appear—unless the user clearly asked to fetch that ticket immediately.\n- After loading brainstorming for such tasks, work through its checklist (TodoWrite when it requires tasks); do not fetch external tickets (Jira MCP, etc.) until that checklist permits.\n</CURSOR_AGENT_SKILLS_ADAPTER>'
+  cursor_adapter_escaped=$(escape_for_json "$cursor_adapter_plain")
+  cursor_tail_plain=$'<CURSOR_ADAPTER_TAIL>\n**Supersedes conflicting lines above:** Anything in the pasted using-superpowers body about invoking a Skill tool or not using Read on skill files is **null and void** in Cursor. Skills load only via Read(absolute path from available-skills).\n\n**Process skills override casual user phrasing:** If the user mixes vague design intent with a concrete ticket key, treat brainstorming as governing until its checklist allows ticket fetch—unless they explicitly asked to fetch that ticket first in this message.\n</CURSOR_ADAPTER_TAIL>'
+  cursor_tail_escaped=$(escape_for_json "$cursor_tail_plain")
+  skills_intro_plain='**Full superpowers:using-superpowers skill content follows.** In Cursor, use Read(skill path from available-skills) whenever you would invoke Skill in Claude Code:'
+  skills_intro_escaped=$(escape_for_json "$skills_intro_plain")
+else
+  skills_intro_plain='**Below is the full content of your superpowers:using-superpowers skill - your introduction to using skills. For all other skills, use the Skill tool:**'
+  skills_intro_escaped=$(escape_for_json "$skills_intro_plain")
+fi
+
+session_context="<EXTREMELY_IMPORTANT>\nYou have superpowers.\n"
+if [ "$use_cursor_agent_adapter" = true ]; then
+  session_context+="${cursor_adapter_escaped}\n\n"
+fi
+session_context+="${skills_intro_escaped}\n\n${using_superpowers_escaped}\n\n${warning_escaped}"
+if [ "$use_cursor_agent_adapter" = true ]; then
+  session_context+="\n\n${cursor_tail_escaped}"
+fi
+session_context+="\n</EXTREMELY_IMPORTANT>"
+
+# Emit only the field the current platform consumes (Claude Code reads both, so don't double up).
+# printf, not heredoc — works around bash 5.3+ heredoc hang (https://github.com/obra/superpowers/issues/571).
+if [ "$use_cursor_agent_adapter" = true ]; then
+  # Cursor SessionStart: only additional_context (snake_case) is applied. Stdin carries
+  # session_id even when CURSOR_PLUGIN_ROOT is unset (e.g. user-level hooks.json).
   printf '{\n  "additional_context": "%s"\n}\n' "$session_context"
 elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]; then
-  # Claude Code sets CLAUDE_PLUGIN_ROOT without COPILOT_CLI
   printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$session_context"
 else
-  # Copilot CLI (sets COPILOT_CLI=1) or unknown platform — SDK standard format
   printf '{\n  "additionalContext": "%s"\n}\n' "$session_context"
 fi
 
