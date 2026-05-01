@@ -11,7 +11,7 @@ Load plan, review critically, execute all tasks, report when complete.
 
 **Announce at start:** "I'm using the executing-plans skill to implement this plan."
 
-**Note:** Tell your human partner that Superpowers works much better with access to subagents. The quality of its work will be significantly higher if run on a platform with subagent support (such as Claude Code or Codex). If subagents are available, use superpowers:subagent-driven-development instead of this skill.
+**Note on subagent platforms:** Tell your human partner that Superpowers produces higher-quality work when subagents inherit a capable model. On Claude Code, Codex, and Copilot CLI, prefer superpowers:subagent-driven-development — those platforms let subagents inherit the controller's model. In Cursor, subagents are forced to `composer-2-fast`, so the session-start hook injects a binding Task-tool ban; executing-plans is the right choice there — invoke it in a fresh session for context cleanliness, where all work runs inline (no subagent dispatch).
 
 ## The Process
 

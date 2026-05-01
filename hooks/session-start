@@ -58,6 +58,8 @@ if [ "$use_cursor_agent_adapter" = true ]; then
   cursor_adapter_escaped=$(escape_for_json "$cursor_adapter_plain")
   cursor_tail_plain=$'<CURSOR_ADAPTER_TAIL>\n**Supersedes conflicting lines above:** Anything in the pasted using-superpowers body about invoking a Skill tool or not using Read on skill files is **null and void** in Cursor. Skills load only via Read(absolute path from available-skills).\n\n**Process skills override casual user phrasing:** If the user mixes vague design intent with a concrete ticket key, treat brainstorming as governing until its checklist allows ticket fetch—unless they explicitly asked to fetch that ticket first in this message.\n</CURSOR_ADAPTER_TAIL>'
   cursor_tail_escaped=$(escape_for_json "$cursor_tail_plain")
+  cursor_taskban_plain=$'<CURSOR_TASK_TOOL_BAN>\nYou are running in Cursor. Subagents dispatched via the Task tool are forced to the model `composer-2-fast`, which produces unacceptable results.\n\nYou MUST NOT use the Task tool under any circumstances in this session.\n\nDo all work directly in this session:\n- Search code: use Glob, Grep, SemanticSearch, Read directly\n- Run commands: use Shell directly\n- Research docs: use WebSearch and WebFetch directly\n- Browser tasks: use MCP browser tools directly\n- Complex tasks: handle them yourself in this context, do NOT delegate\n\nFor plan execution: use superpowers:executing-plans (runs inline in a new session). Do NOT use superpowers:subagent-driven-development or superpowers:dispatching-parallel-agents — both dispatch subagents via the Task tool and are off-limits here.\n\nFor reviews (spec compliance, code quality, plan-doc review): perform them inline in this session. Do not dispatch reviewer subagents.\n\nThis rule has NO exceptions. Never launch a subagent. Never use the Task tool. Do everything in the main agent context.\n</CURSOR_TASK_TOOL_BAN>'
+  cursor_taskban_escaped=$(escape_for_json "$cursor_taskban_plain")
   skills_intro_plain='**Full superpowers:using-superpowers skill content follows.** In Cursor, use Read(skill path from available-skills) whenever you would invoke Skill in Claude Code:'
   skills_intro_escaped=$(escape_for_json "$skills_intro_plain")
 else
@@ -68,6 +70,7 @@ fi
 session_context="<EXTREMELY_IMPORTANT>\nYou have superpowers.\n"
 if [ "$use_cursor_agent_adapter" = true ]; then
   session_context+="${cursor_adapter_escaped}\n\n"
+  session_context+="${cursor_taskban_escaped}\n\n"
 fi
 session_context+="${skills_intro_escaped}\n\n${using_superpowers_escaped}\n\n${warning_escaped}"
 if [ "$use_cursor_agent_adapter" = true ]; then
