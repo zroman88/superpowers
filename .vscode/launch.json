@@ -1,0 +1,38 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Sync: superpowers → Cursor (dry run)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "noDebug": true,
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "sync:cursor", "--", "-n", "-y"]
+    },
+    {
+      "name": "Sync: superpowers → Cursor (apply, -y)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "noDebug": true,
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "sync:cursor", "--", "-y"]
+    },
+    {
+      "name": "Sync: superpowers → Cursor (apply, ask confirm)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "noDebug": true,
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "sync:cursor"]
+    }
+  ]
+}

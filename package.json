@@ -2,5 +2,8 @@
   "name": "superpowers",
   "version": "5.0.7",
   "type": "module",
-  "main": ".opencode/plugins/superpowers.js"
+  "main": ".opencode/plugins/superpowers.js",
+  "scripts": {
+    "sync:cursor": "bash ./scripts/sync-skills-to-cursor-plugin.sh"
+  }
 }

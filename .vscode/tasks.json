@@ -1,0 +1,42 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Sync superpowers: Cursor (dry run)",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/sync-skills-to-cursor-plugin.sh -n -y",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "Sync superpowers: Cursor (apply, -y)",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/sync-skills-to-cursor-plugin.sh -y",
+      "problemMatcher": [],
+      "group": { "kind": "build" },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "Sync superpowers: Cursor (apply, ask confirm)",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/sync-skills-to-cursor-plugin.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    }
+  ]
+}
