@@ -19,7 +19,7 @@ Three Superpowers skills currently push agents toward subagent dispatch:
 2. `superpowers:dispatching-parallel-agents` — for debugging / investigation across independent failures.
 3. `superpowers:executing-plans` — contains an active anti-guidance line: *"If subagents are available, use superpowers:subagent-driven-development instead of this skill."* In Cursor this fires and pushes the agent at the broken path.
 
-Goal: in Cursor sessions, hard-ban the `Task` tool, redirect plan execution to `superpowers:executing-plans` (which runs inline in the controller's context), and rephrase the misleading line in `executing-plans/SKILL.md` so it's accurate cross-platform.
+Goal: in Cursor sessions, hard-ban the `Task` tool, redirect plan execution to `superpowers:executing-plans` (which is invoked in a fresh session for context cleanliness and runs inline there, no subagent dispatch), and rephrase the misleading line in `executing-plans/SKILL.md` so it's accurate cross-platform.
 
 ## Scope
 
@@ -88,7 +88,7 @@ Do all work directly in this session:
 - Browser tasks: use MCP browser tools directly
 - Complex tasks: handle them yourself in this context, do NOT delegate
 
-For plan execution: use superpowers:executing-plans (runs inline in this
+For plan execution: use superpowers:executing-plans (runs inline in a new
 session). Do NOT use superpowers:subagent-driven-development or
 superpowers:dispatching-parallel-agents — both dispatch subagents via the
 Task tool and are off-limits here.
@@ -131,7 +131,7 @@ About 3 physical lines of new shell (one `$'...'` heredoc declaration, one `esca
 
 **With:**
 
-> **Note on subagent platforms:** Tell your human partner that Superpowers produces higher-quality work when subagents inherit a capable model. On Claude Code, Codex, and Copilot CLI, prefer superpowers:subagent-driven-development — those platforms let subagents inherit the controller's model. In Cursor, subagents are forced to `composer-2-fast`, so the session-start hook injects a binding Task-tool ban; executing-plans is the right choice there and runs inline in the controller's context.
+> **Note on subagent platforms:** Tell your human partner that Superpowers produces higher-quality work when subagents inherit a capable model. On Claude Code, Codex, and Copilot CLI, prefer superpowers:subagent-driven-development — those platforms let subagents inherit the controller's model. In Cursor, subagents are forced to `composer-2-fast`, so the session-start hook injects a binding Task-tool ban; executing-plans is the right choice there — invoke it in a fresh session for context cleanliness, where all work runs inline (no subagent dispatch).
 
 Surgical paragraph swap. No other lines in the skill change. Section heading text and surrounding content are preserved.
 
