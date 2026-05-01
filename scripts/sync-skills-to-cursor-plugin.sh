@@ -83,8 +83,10 @@ if [[ -n "$SINGLE_SKILL" ]]; then
   [[ -d "$REPO_ROOT/skills/$SINGLE_SKILL" ]] || die "no skills/$SINGLE_SKILL under $REPO_ROOT"
 fi
 
-# Plugin root: parent of each .../superpowers/<hash>/skills
-mapfile -t DEST_SKILLS < <(find "$CURSOR_ROOT" -type d -path "*/superpowers/*/skills" 2>/dev/null | sort -u)
+# Plugin root: parent of each .../superpowers/<hash>/skills (marketplace cache install)
+# OR .../superpowers/skills (local install under ~/.cursor/plugins/local/superpowers/).
+# Both layouts ship the same content; only the install location differs.
+mapfile -t DEST_SKILLS < <(find "$CURSOR_ROOT" -type d \( -path "*/superpowers/*/skills" -o -path "*/superpowers/skills" \) 2>/dev/null | sort -u)
 [[ ${#DEST_SKILLS[@]} -gt 0 ]] || die "no Cursor superpowers plugin under $CURSOR_ROOT — is superpowers installed? Try: find ~/.cursor/plugins -path '*superpowers*/skills' -type d"
 
 rsync_a=(-a -v)
